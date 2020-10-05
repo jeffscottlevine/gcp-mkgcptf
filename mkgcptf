@@ -7,7 +7,7 @@
 #         -p, --project PROJECT_ID         (required)
 #         -z, --zone ZONE                  (reguired)
 #         -n, --network NETWORK            (required)
-#         -t, --machine-type MACHINE_TYPE  (required)
+#        [-t, --machine-type MACHINE_TYPE] (optional)
 #        [-h, --help]                      (optional)
 #        [-s, --random-suffix]             (optional)
 #        
@@ -25,9 +25,9 @@ usage()
           -p, --project PROJECT_ID         (required)
           -z, --zone ZONE                  (reguired)
           -n, --network NETWORK            (required)
-          -t, --machine-type MACHINE_TYPE  (required)
-         [-h, --help ]                     (optional)
-         [-s, --random-suffix ]            (optional)" >&2
+         [-t, --machine-type MACHINE_TYPE] (optional)
+         [-h, --help]                      (optional)
+         [-s, --random-suffix]             (optional)" >&2
   exit 1
 }
 
@@ -156,13 +156,17 @@ if [ \
   -z "$TF_RESOURCE_PREFIX" -o \
   -z "$TF_PROJECT_ID"      -o \
   -z "$TF_ZONE"            -o \
-  -z "$TF_NETWORK"         -o \
-  -z "$TF_MACHINE_TYPE"       \
+  -z "$TF_NETWORK"            \
   ]
 then
   echo error: missing required value >&2
   usage
   exit 2
+fi
+
+if [ -z "$TF_MACHINE_TYPE" ]
+then
+  TF_MACHINE_TYPE=e2-micro
 fi
 
 if [ $TF_RANDOM_SUFFIX = 1 ]
@@ -175,7 +179,7 @@ fi
 TF_REGION="$(convert_zone_to_region $PROG_NAME $TF_ZONE $ERROR_BAD_ZONE)"
 TF_INSTANCE_USER_DATA=/tmp/tf-instance-user-data-$$.sh
 TF_INSTANCE_NAME=${TF_RESOURCE_PREFIX}${TF_RESOURCE_SUFFIX}
-TF_INSTANCE_SOURCE_DIR=/usr/local/etc/tf
+TF_INSTANCE_SOURCE_DIR=/usr/local/etc
 TF_PROJECT_NUMBER="$(convert_project_id_to_number $PROG_NAME $TF_PROJECT_ID $ERROR_BAD_PROJECT_ID)"
 TF_SERVICE_ACCOUNT=${TF_RESOURCE_PREFIX}${TF_RESOURCE_SUFFIX}
 TF_SERVICE_ACCOUNT_EMAIL=$TF_SERVICE_ACCOUNT@$TF_PROJECT_ID.iam.gserviceaccount.com
@@ -258,10 +262,16 @@ package_upgrade: true
 package_reboot_if_required: true
 
 bootcmd:
-- mkdir -p -m 755 $TF_INSTANCE_SOURCE_DIR
+- mkdir -p -m 755 $TF_INSTANCE_SOURCE_DIR/tf
+- mkdir -p -m 755 $TF_INSTANCE_SOURCE_DIR/vim
 
 write_files:
-- path: $TF_INSTANCE_SOURCE_DIR/provider.tf
+- path: $TF_INSTANCE_SOURCE_DIR/vim/vimrc
+  content: |
+    syntax off
+    set ruler
+
+- path: $TF_INSTANCE_SOURCE_DIR/tf/provider.tf
   content: |
     terraform {
       required_providers {
@@ -278,7 +288,7 @@ write_files:
       $TF_VERSION_CONSTRAINT
     }
 
-- path: $TF_INSTANCE_SOURCE_DIR/regionalaliases.tf
+- path: $TF_INSTANCE_SOURCE_DIR/tf/regionalaliases.tf
   content: |
     provider "google" {
       alias   = "asia-east1"
@@ -441,17 +451,23 @@ write_files:
       $TF_VERSION_CONSTRAINT
     }
 
-- path: $TF_INSTANCE_SOURCE_DIR/backend.tf
+- path: $TF_INSTANCE_SOURCE_DIR/tf/backend.tf
   content: |
     terraform {
       backend "gcs" {
         bucket = "$TF_STATE_BUCKET"
+        prefix = "terraform/state"
       }
     }
 
 - path: /etc/bash.bashrc
   content: |
     echo All initial Terraform source files are in /usr/local/etc/tf.
+    if [ ! -f ~/.vimrc ]
+    then
+      echo "The file ~/.vimrc wasn't found.  Copying from $TF_INSTANCE_SOURCE_DIR/vim."
+      cp $TF_INSTANCE_SOURCE_DIR/vim/vimrc ~/.vimrc
+    fi
   append: true
 
 runcmd:
@@ -489,6 +505,7 @@ echo ':                                                                  :'
 echo ': (1) Allow the instance time to reboot after patch installations. :'
 echo ': (2) All Terraform code is in /usr/local/etc/tf on the instance.  :'
 echo ': (3) Copy the Terraform code to the desired directory.            :'
-echo ': (4) Run "terraform init".                                        :'
+echo ': (4) Make any changes needed (e.g. changing the backend prefix).  :'
+echo ': (5) Run "terraform init".                                        :'
 echo ':                                                                  :'
 echo '+==================================================================+'
