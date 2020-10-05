@@ -1,0 +1,494 @@
+#!/bin/sh
+
+# mkgcptf - Create a GCP virtual instance and install Terraform
+#
+#  syntax: mkgcptf
+#         -x, --prefix NEW_RESOURCE_PREFIX (required)
+#         -p, --project PROJECT_ID         (required)
+#         -z, --zone ZONE                  (reguired)
+#         -n, --network NETWORK            (required)
+#         -t, --machine-type MACHINE_TYPE  (required)
+#        [-h, --help]                      (optional)
+#        [-s, --random-suffix]             (optional)
+#        
+#
+# This was developed to speed up the time creating a GCP instance
+# and installing Terraform.  All the .tf files are installed on
+# /usr/local/etc/tf but this can be changed.
+
+# usage - print out a usage message
+
+usage()
+{
+  echo "usage: mkgcptf
+          -x, --prefix NEW_RESOURCE_PREFIX (required)
+          -p, --project PROJECT_ID         (required)
+          -z, --zone ZONE                  (reguired)
+          -n, --network NETWORK            (required)
+          -t, --machine-type MACHINE_TYPE  (required)
+         [-h, --help ]                     (optional)
+         [-s, --random-suffix ]            (optional)" >&2
+  exit 1
+}
+
+# convert_zone_to_region PROG_NAME ZONE_VALUE EXIT_STATUS_IF_ERROR
+
+convert_zone_to_region()
+{
+  PROG_NAME="$1"
+  ZONE="$2"
+  EXIT_STATUS="$3"
+
+  REGION=`gcloud compute zones list --filter "name~^$ZONE$" --format="csv [no-heading] (region)"`
+  if [ -z "$REGION" -a $EXIT_STATUS -ne 0 ]
+  then
+    echo $PROG_NAME: invalid zone
+    exit $EXIT_STATUS
+  fi
+
+  echo $REGION
+}
+
+# convert_project_id_to_number PROG_NAME PROJECT_ID EXIT_STATUS_IF_ERROR
+
+convert_project_id_to_number()
+{
+  PROG_NAME="$1"
+  PROJECT_ID="$2"
+  EXIT_STATUS="$3"
+
+  PROJECT_NUMBER=`gcloud projects list --filter="PROJECT_ID~^$PROJECT_ID$" --format="csv [no-heading] (PROJECT_NUMBER)"`
+  if [ -z "$PROJECT_NUMBER" -a $EXIT_STATUS -ne 0 ]
+  then
+    echo $PROG_NAME: invalid zone
+    exit $EXIT_STATUS
+  fi
+
+  echo $PROJECT_NUMBER
+}
+
+# random_bytes NUMBER_OF_BYTES BYTE_FORMAT
+#
+# Notes:
+# (1) BYTE_FORMAT should be a quoted string (e.g. "%02x" or '%02X').
+# (2) This generates bytes so 2 bytes would be 4 hex digits.
+
+random_bytes()
+{
+  NUMBER_OF_BYTES=$1
+  BYTE_FORMAT=$2
+  FORMAT_STRING="$NUMBER_OF_BYTES/1 \"$BYTE_FORMAT\" \"\\n\""
+  RANDOM_BYTES=`hexdump -n $NUMBER_OF_BYTES -v -e "$FORMAT_STRING" /dev/urandom`
+  echo $RANDOM_BYTES
+}
+
+# get_latest_gcp_tf_release_version
+#
+# Determine the latest version of the GCP Terraform provider.
+# This is *not* guaranteed to work.  It depends very much on
+# the structure of the GitHub directory for Terraform, in particular
+# that going to the "releases/latest" appendix to the URL redirects
+# to the URL of the specific version.
+
+get_latest_gcp_tf_release_version()
+{ 
+  TF_GOOGLE_SOURCE=https://github.com/hashicorp/terraform-provider-google
+  TF_LATEST_URL=$TF_GOOGLE_SOURCE/releases/latest
+
+  TF_VERSION_URL=`curl -s -w "%{redirect_url}" -o /dev/null $TF_LATEST_URL`
+  TF_VERSION=`basename $TF_VERSION_URL | sed -e "s/^v//"`
+
+  echo $TF_VERSION
+}
+
+# Initialize general global variables
+
+PROG_NAME="$0"
+ERROR_BAD_ZONE=2
+ERROR_BAD_PROJECT_ID=3
+ERROR_GETOPT_BAD_OPTIONS=4
+
+# Initialize variables to hold future getopt arguments.
+
+TF_RESOURCE_PREFIX=""
+TF_PROJECT_ID=""
+TF_ZONE=""
+TF_NETWORK=""
+TF_MACHINE_TYPE=""
+TF_HELP=0
+TF_RANDOM_SUFFIX=0
+
+# Declare getopt options and invoke getopt to parse command arguments.
+
+SHORT_OPTIONS="x:p:z:n:t:hs"
+LONG_OPTIONS="prefix:,project:,zone:,network:,machine-type:,help,random-suffix"
+PARSED_ARGS=$(getopt -n $0 -o $SHORT_OPTIONS --long $LONG_OPTIONS -- "$@")
+if [ $? -ne 0 ]
+then
+  usage
+  exit $ERROR_GETOPT_BAD_OPTIONS
+fi
+
+# Loop through getopt results and parse arguments.
+
+eval set -- "$PARSED_ARGS"
+while :
+do
+  case "$1" in
+    -x | --prefix)        TF_RESOURCE_PREFIX="$2" ; shift 2       ;;
+    -p | --project)       TF_PROJECT_ID="$2"      ; shift 2       ;;
+    -z | --zone)          TF_ZONE="$2"            ; shift 2        ;;
+    -n | --network)       TF_NETWORK="$2"         ; shift 2        ;;
+    -t | --machine-type)  TF_MACHINE_TYPE="$2"    ; shift 2        ;;
+    -h | --help)          TF_HELP=1               ; shift          ;;
+    -s | --random_suffix) TF_RANDOM_SUFFIX=1      ; shift          ;;
+    -- )                                           shift ; break  ;;
+  esac
+done
+
+if [ $TF_HELP = 1 ]
+then
+   usage
+   exit 0
+fi
+
+if [ \
+  -z "$TF_RESOURCE_PREFIX" -o \
+  -z "$TF_PROJECT_ID"      -o \
+  -z "$TF_ZONE"            -o \
+  -z "$TF_NETWORK"         -o \
+  -z "$TF_MACHINE_TYPE"       \
+  ]
+then
+  echo error: missing required value >&2
+  usage
+  exit 2
+fi
+
+if [ $TF_RANDOM_SUFFIX = 1 ]
+then
+  TF_RESOURCE_SUFFIX=-"$(random_bytes 6 '%02x')"
+else
+  TF_RESOURCE_SUFFIX=""
+fi
+
+TF_REGION="$(convert_zone_to_region $PROG_NAME $TF_ZONE $ERROR_BAD_ZONE)"
+TF_INSTANCE_USER_DATA=/tmp/tf-instance-user-data-$$.sh
+TF_INSTANCE_NAME=${TF_RESOURCE_PREFIX}${TF_RESOURCE_SUFFIX}
+TF_INSTANCE_SOURCE_DIR=/usr/local/etc/tf
+TF_PROJECT_NUMBER="$(convert_project_id_to_number $PROG_NAME $TF_PROJECT_ID $ERROR_BAD_PROJECT_ID)"
+TF_SERVICE_ACCOUNT=${TF_RESOURCE_PREFIX}${TF_RESOURCE_SUFFIX}
+TF_SERVICE_ACCOUNT_EMAIL=$TF_SERVICE_ACCOUNT@$TF_PROJECT_ID.iam.gserviceaccount.com
+TF_STATE_BUCKET=${TF_RESOURCE_PREFIX}${TF_RESOURCE_SUFFIX}
+TF_PROVIDER_VERSION="$(get_latest_gcp_tf_release_version)"
+
+# create the Terraform service account
+
+gcloud iam service-accounts create $TF_SERVICE_ACCOUNT \
+  --description "Terraform service account" \
+  --project $TF_PROJECT_ID
+
+if [ $? -ne 0 ]
+then
+  echo $0: unable to create service account $TF_SERVICE_ACCOUNT
+  exit 1
+fi
+
+echo adding roles to service account...
+
+gcloud projects  \
+  add-iam-policy-binding $TF_PROJECT_ID \
+  --member=serviceAccount:$TF_SERVICE_ACCOUNT_EMAIL \
+  --role='roles/compute.instanceAdmin.v1' \
+  > /dev/null
+if [ $? -ne 0 ]
+then
+  echo $0: unable to add compute.instanceAdmin.v1 role to service account
+  exit 1
+fi
+
+gcloud projects \
+  add-iam-policy-binding $TF_PROJECT_ID \
+  --member=serviceAccount:$TF_SERVICE_ACCOUNT_EMAIL \
+  --role='roles/storage.admin' \
+  > /dev/null
+if [ $? -ne 0 ]
+then
+  echo $0: unable to add storage.admin role to service account
+  exit 1
+fi
+
+gcloud projects \
+  add-iam-policy-binding $TF_PROJECT_ID \
+  --member=serviceAccount:$TF_SERVICE_ACCOUNT_EMAIL \
+  --role='roles/iam.serviceAccountUser' \
+  > /dev/null
+if [ $? -ne 0 ]
+then
+  echo $0: unable to add roles/iam.serviceAccountUser role to service account
+  exit 1
+fi
+
+echo creating Terraform state bucket $TF_STATE_BUCKET...
+gsutil mb gs://$TF_STATE_BUCKET
+if [ $? -ne 0 ]
+then
+  echo $0: unable to create Terraform state bucket $TF_STATE_BUCKET
+  exit 1
+fi
+
+gsutil versioning set on gs://$TF_STATE_BUCKET
+if [ $? -ne 0 ]
+then
+  echo $0: unable to enable versioning on Terraform state bucket $TF_STATE_BUCKET
+  exit 1
+fi
+
+if [ -z "$TF_PROVIDER_VERSION" ]
+then
+  TF_VERSION_CONSTRAINT=""
+else
+  TF_VERSION_CONSTRAINT="version = \">= $TF_PROVIDER_VERSION\""
+fi
+
+cat <<EOF >$TF_INSTANCE_USER_DATA
+#cloud-config
+package_update: true
+package_upgrade: true
+package_reboot_if_required: true
+
+bootcmd:
+- mkdir -p -m 755 $TF_INSTANCE_SOURCE_DIR
+
+write_files:
+- path: $TF_INSTANCE_SOURCE_DIR/provider.tf
+  content: |
+    terraform {
+      required_providers {
+        google = {
+          source = "hashicorp/google"
+          $TF_VERSION_CONSTRAINT
+        }
+      }
+    }
+
+    provider "google" {
+      project = "$TF_PROJECT_ID"
+      region  = "$TF_REGION"
+      $TF_VERSION_CONSTRAINT
+    }
+
+- path: $TF_INSTANCE_SOURCE_DIR/regionalaliases.tf
+  content: |
+    provider "google" {
+      alias   = "asia-east1"
+      project = "$TF_PROJECT_ID"
+      region  = "asia-east1"
+      $TF_VERSION_CONSTRAINT
+    }
+
+    provider "google" {
+      alias   = "asia-east2"
+      project = "$TF_PROJECT_ID"
+      region  = "asia-east2"
+      $TF_VERSION_CONSTRAINT
+    }
+
+    provider "google" {
+      alias   = "asia-northeast1"
+      project = "$TF_PROJECT_ID"
+      region  = "asia-northeast1"
+      $TF_VERSION_CONSTRAINT
+    }
+
+    provider "google" {
+      alias   = "asia-northeast2"
+      project = "$TF_PROJECT_ID"
+      region  = "asia-northeast2"
+      $TF_VERSION_CONSTRAINT
+    }
+
+    provider "google" {
+      alias   = "asia-northeast3"
+      project = "$TF_PROJECT_ID"
+      region  = "asia-northeast3"
+      $TF_VERSION_CONSTRAINT
+    }
+
+    provider "google" {
+      alias   = "asia-south1"
+      project = "$TF_PROJECT_ID"
+      region  = "asia-south1"
+      $TF_VERSION_CONSTRAINT
+    }
+
+    provider "google" {
+      alias   = "asia-southeast1"
+      project = "$TF_PROJECT_ID"
+      region  = "asia-southeast1"
+      $TF_VERSION_CONSTRAINT
+    }
+
+    provider "google" {
+      alias   = "asia-southeast2"
+      project = "$TF_PROJECT_ID"
+      region  = "asia-southeast2"
+      $TF_VERSION_CONSTRAINT
+    }
+
+    provider "google" {
+      alias   = "australia-southeast1"
+      project = "$TF_PROJECT_ID"
+      region  = "australia-southeast1"
+      $TF_VERSION_CONSTRAINT
+    }
+
+    provider "google" {
+      alias   = "europe-north1"
+      project = "$TF_PROJECT_ID"
+      region  = "europe-north1"
+      $TF_VERSION_CONSTRAINT
+    }
+
+    provider "google" {
+      alias   = "europe-west1"
+      project = "$TF_PROJECT_ID"
+      region  = "europe-west1"
+      $TF_VERSION_CONSTRAINT
+    }
+
+    provider "google" {
+      alias   = "europe-west2"
+      project = "$TF_PROJECT_ID"
+      region  = "europe-west2"
+      $TF_VERSION_CONSTRAINT
+    }
+
+    provider "google" {
+      alias   = "europe-west3"
+      project = "$TF_PROJECT_ID"
+      region  = "europe-west3"
+      $TF_VERSION_CONSTRAINT
+    }
+
+    provider "google" {
+      alias   = "europe-west4"
+      project = "$TF_PROJECT_ID"
+      region  = "europe-west4"
+      $TF_VERSION_CONSTRAINT
+    }
+
+    provider "google" {
+      alias   = "europe-west6"
+      project = "$TF_PROJECT_ID"
+      region  = "europe-west6"
+      $TF_VERSION_CONSTRAINT
+    }
+
+    provider "google" {
+      alias   = "northamerica-northeast1"
+      project = "$TF_PROJECT_ID"
+      region  = "northamerica-northeast1"
+      $TF_VERSION_CONSTRAINT
+    }
+
+    provider "google" {
+      alias   = "southamerica-east1"
+      project = "$TF_PROJECT_ID"
+      region  = "southamerica-east1"
+      $TF_VERSION_CONSTRAINT
+    }
+
+    provider "google" {
+      alias   = "us-central1"
+      project = "$TF_PROJECT_ID"
+      region  = "us-central1"
+      $TF_VERSION_CONSTRAINT
+    }
+
+    provider "google" {
+      alias   = "us-east1"
+      project = "$TF_PROJECT_ID"
+      region  = "us-east1"
+      $TF_VERSION_CONSTRAINT
+    }
+
+    provider "google" {
+      alias   = "us-west1"
+      project = "$TF_PROJECT_ID"
+      region  = "us-west1"
+      $TF_VERSION_CONSTRAINT
+    }
+
+    provider "google" {
+      alias   = "us-west2"
+      project = "$TF_PROJECT_ID"
+      region  = "us-west2"
+      $TF_VERSION_CONSTRAINT
+    }
+
+    provider "google" {
+      alias   = "us-west3"
+      project = "$TF_PROJECT_ID"
+      region  = "us-west3"
+      $TF_VERSION_CONSTRAINT
+    }
+
+    provider "google" {
+      alias   = "us-west4"
+      project = "$TF_PROJECT_ID"
+      region  = "us-west4"
+      $TF_VERSION_CONSTRAINT
+    }
+
+- path: $TF_INSTANCE_SOURCE_DIR/backend.tf
+  content: |
+    terraform {
+      backend "gcs" {
+        bucket = "$TF_STATE_BUCKET"
+      }
+    }
+
+- path: /etc/bash.bashrc
+  content: |
+    echo All initial Terraform source files are in /usr/local/etc/tf.
+  append: true
+
+runcmd:
+- curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo apt-key add -
+- sudo apt-add-repository "deb [arch=amd64] https://apt.releases.hashicorp.com $(lsb_release -cs) main"
+- sudo apt-get install terraform
+EOF
+
+# create the Terraform instance
+
+echo creating instance...
+gcloud compute instances create $TF_INSTANCE_NAME \
+  --machine-type=$TF_MACHINE_TYPE \
+  --zone=$TF_ZONE \
+  --network-interface=network=$TF_NETWORK \
+  --image-project=ubuntu-os-cloud \
+  --image-family=ubuntu-2004-lts \
+  --metadata-from-file user-data=$TF_INSTANCE_USER_DATA \
+  --service-account=$TF_SERVICE_ACCOUNT_EMAIL \
+  --scopes=https://www.googleapis.com/auth/cloud-platform \
+  --project $TF_PROJECT_ID
+
+if [ $? -ne 0 ]
+then
+  echo $0: unable to create instance
+  exit 1
+fi
+
+rm $TF_INSTANCE_USER_DATA
+
+echo '+==================================================================+'
+echo ':                                                                  :'
+echo ': Notes:                                                           :'
+echo ':                                                                  :'
+echo ': (1) Allow the instance time to reboot after patch installations. :'
+echo ': (2) All Terraform code is in /usr/local/etc/tf on the instance.  :'
+echo ': (3) Copy the Terraform code to the desired directory.            :'
+echo ': (4) Run "terraform init".                                        :'
+echo ':                                                                  :'
+echo '+==================================================================+'
