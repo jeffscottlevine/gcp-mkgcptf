@@ -1,10 +1,15 @@
-.\" generated with Ronn-NG/v0.8.0
-.\" http://github.com/apjanke/ronn-ng/tree/0.8.0
+.\" generated with Ronn/v0.7.3
+.\" http://github.com/rtomayko/ronn/tree/0.7.3
+.
 .TH "MKTF" "1" "October 2020" "" ""
+.
 .SH "NAME"
 \fBmktf\fR \- Launch a GCP Ubuntu instance and set up Terraform
+.
 .SH "SYNOPSIS"
+.
 .nf
+
 mktf
      \-x, \-\-prefix NEW_RESOURCE_PREFIX (required)
      \-p, \-\-project PROJECT_ID         (required)
@@ -13,15 +18,22 @@ mktf
     [\-t, \-\-machine\-type MACHINE_TYPE] (optional)
     [\-h, \-\-help]                      (optional)
     [\-s, \-\-random\-suffix]             (optional)
+.
 .fi
+.
 .SH "DESCRIPTION"
 The mktf command launches an Ubuntu instance, installs Terraform, and creates Terraform scripts for the Google Cloud provider, regional providers, and a backend on Google Cloud Storage\. The goal of this command is to make getting started with Terraform easier\. To support all of this, mktf also creates a service account with the appropriate IAM permissions and a version\-enabled Google Cloud Storage bucket\.
+.
 .P
 The Terraform code is stored in /usr/local/etc/tf\. To use the code, copy all the files to your source directory, make any desired changes, and run "terraform init"\. The goal of mktf is to automate the standard setup stuff\. You still need to have a working knowledge of Terraform\.
+.
 .P
 In addition to installing Terraform and creating initial terraform scripts, mktf also modifies the global bashrc file to (1) display a message saying the Terraform source files are in /usr/local/etc/tf and (2) copies /usr/local/etc/vim/vimrc to ~/\.vimrc if ~/\.vimrc does not exist\. This last item was added to simplify the creation of ~/\.vimrc since the behavior of vim configuration files may vary between releases\.
+.
 .SH "OPTIONS"
+.
 .nf
+
  \-x, \-\-prefix NEW_RESOURCE_PREFIX (required)
     This option specifiesthe prefix for names of the resources created by mygcptf\.
     This includes the service account, the GCS bucket for Terraform state, and the instance\.
@@ -48,10 +60,30 @@ In addition to installing Terraform and creating initial terraform scripts, mktf
 [\-s, \-\-random\-suffix]             (optional)
     This option appends a random suffix to each of the resources created by mktf\.
     This does not include the resources created within Terraform\.
+.
 .fi
+.
+.SH "SECURITY NOTES"
+The service account that is created to launch the Terraform instance contains the permissions listed below\.
+.
+.IP "\(bu" 4
+roles/owner
+.
+.IP "\(bu" 4
+roles/resourcemanager\.projectIamAdmin
+.
+.IP "\(bu" 4
+roles/iam\.serviceAccountUser
+.
+.IP "" 0
+.
 .SH "EXAMPLES"
+.
 .nf
+
 \&\./mktf \-x my\-instance \-p my\-project \-n my\-network \-z us\-west2\-b \-s
+.
 .fi
+.
 .SH "COPYRIGHT"
 mktf is copyright (c) 2020, Jeffrey S\. Levine\. Released under the Apache license\.

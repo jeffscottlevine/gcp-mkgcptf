@@ -223,11 +223,33 @@ echo adding roles to service account...
 gcloud projects  \
   add-iam-policy-binding $TF_PROJECT_ID \
   --member=serviceAccount:$TF_SERVICE_ACCOUNT_EMAIL \
-  --role='roles/editor' \
+  --role='roles/owner' \
   > /dev/null
 if [ $? -ne 0 ]
 then
-  echo $0: unable to add editor role to service account
+  echo $0: unable to add owner role to service account
+  exit 1
+fi
+
+gcloud projects  \
+  add-iam-policy-binding $TF_PROJECT_ID \
+  --member=serviceAccount:$TF_SERVICE_ACCOUNT_EMAIL \
+  --role='roles/resourcemanager.projectIamAdmin' \
+  > /dev/null
+if [ $? -ne 0 ]
+then
+  echo $0: unable to add projectIamAdmin role to service account
+  exit 1
+fi
+
+gcloud projects  \
+  add-iam-policy-binding $TF_PROJECT_ID \
+  --member=serviceAccount:$TF_SERVICE_ACCOUNT_EMAIL \
+  --role='roles/iam.serviceAccountUser' \
+  > /dev/null
+if [ $? -ne 0 ]
+then
+  echo $0: unable to add iam.serviceAccountUser role to service account
   exit 1
 fi
 

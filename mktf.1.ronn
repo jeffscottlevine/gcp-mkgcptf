@@ -57,6 +57,16 @@ of vim configuration files may vary between releases.
         This option appends a random suffix to each of the resources created by mktf.
         This does not include the resources created within Terraform.
 
+## SECURITY NOTES
+
+The service account that is created to launch the Terraform instance contains the permissions listed below.
+
+* roles/owner
+
+* roles/resourcemanager.projectIamAdmin
+
+* roles/iam.serviceAccountUser
+
 ## EXAMPLES
 
     ./mktf -x my-instance -p my-project -n my-network -z us-west2-b -s
