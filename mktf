@@ -231,17 +231,6 @@ then
   exit 1
 fi
 
-gcloud projects \
-  add-iam-policy-binding $TF_PROJECT_ID \
-  --member=serviceAccount:$TF_SERVICE_ACCOUNT_EMAIL \
-  --role='roles/iam.serviceAccountUser' \
-  > /dev/null
-if [ $? -ne 0 ]
-then
-  echo $0: unable to add roles/iam.serviceAccountUser role to service account
-  exit 1
-fi
-
 echo creating Terraform state bucket $TF_STATE_BUCKET...
 gsutil mb gs://$TF_STATE_BUCKET
 if [ $? -ne 0 ]
