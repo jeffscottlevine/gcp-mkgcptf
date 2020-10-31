@@ -223,22 +223,11 @@ echo adding roles to service account...
 gcloud projects  \
   add-iam-policy-binding $TF_PROJECT_ID \
   --member=serviceAccount:$TF_SERVICE_ACCOUNT_EMAIL \
-  --role='roles/compute.instanceAdmin.v1' \
+  --role='roles/editor' \
   > /dev/null
 if [ $? -ne 0 ]
 then
-  echo $0: unable to add compute.instanceAdmin.v1 role to service account
-  exit 1
-fi
-
-gcloud projects \
-  add-iam-policy-binding $TF_PROJECT_ID \
-  --member=serviceAccount:$TF_SERVICE_ACCOUNT_EMAIL \
-  --role='roles/storage.admin' \
-  > /dev/null
-if [ $? -ne 0 ]
-then
-  echo $0: unable to add storage.admin role to service account
+  echo $0: unable to add editor role to service account
   exit 1
 fi
 
