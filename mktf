@@ -191,7 +191,7 @@ fi
 
 if [ $TF_RANDOM_SUFFIX = 1 ]
 then
-  TF_RESOURCE_SUFFIX=-"$(random_bytes 6 '%02x')"
+  TF_RESOURCE_SUFFIX=-"$(random_bytes 3 '%02x')"
 else
   TF_RESOURCE_SUFFIX=""
 fi
@@ -517,6 +517,21 @@ then
 fi
 
 rm $TF_INSTANCE_USER_DATA
+
+cat <<EOF >rmtf$TF_RESOURCE_SUFFIX
+#!/bin/sh
+
+echo Deleting Terraform state bucket gs://$TF_STATE_BUCKET...
+gsutil rb gs://$TF_STATE_BUCKET"
+
+echo Deleting instance $TF_INSTANCE_NAME...
+gcloud compute instances delete $TF_INSTANCE_NAME...
+
+echo Deleting service account $TF_SERVICE_ACCOUNT_EMAIL...
+gcloud iam service-accounts delete $TF_SERVICE_ACCOUNT_EMAIL
+
+echo Cleanup complete.  Please delete the file $0 when you no longer need it.
+EOF
 
 echo '+==================================================================+'
 echo ':                                                                  :'

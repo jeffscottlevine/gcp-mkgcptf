@@ -87,19 +87,22 @@
 
 <h2 id="DESCRIPTION">DESCRIPTION</h2>
 
-<p>The mktf command launches an Ubuntu instance, installs Terraform, and creates Terraform scripts for the Google Cloud provider,
-regional providers, and a backend on Google Cloud Storage.  The goal of this command is to make getting started with Terraform easier.
-To support all of this, mktf also creates a service account with the appropriate IAM permissions and
-a version-enabled Google Cloud Storage bucket.</p>
+<p>The mktf command creates an Ubuntu instance and installs Terraform.
+The goal of this command is to make getting started with Terraform easier.</p>
 
-<p>The Terraform code is stored in /usr/local/etc/tf.  To use the code, copy all the files to your source directory,
-make any desired changes, and run "terraform init".  The goal of mktf is to automate the standard setup stuff.
-You still need to have a working knowledge of Terraform.</p>
+<p>More specifically, mktf performs the tasks listed below.</p>
 
-<p>In addition to installing Terraform and creating initial terraform scripts, mktf also modifies the global bashrc file
-to (1) display a message saying the Terraform source files are in /usr/local/etc/tf and (2) copies /usr/local/etc/vim/vimrc
-to ~/.vimrc if ~/.vimrc does not exist.  This last item was added to simplify the creation of ~/.vimrc since the behavior
-of vim configuration files may vary between releases.</p>
+<ol>
+<li>Optionally creates a random suffix used for resource names. and creates Terraform scripts for the Google Cloud provider,</li>
+<li>Creates a service account that will be used when creating the instance.</li>
+<li>Creates a Google Cloud Storage bucket for holding Terraform state.</li>
+<li>Creates a Google Cloud Ubuntu instance.</li>
+<li>Installs Terraform on the instances.</li>
+<li>Creates Terraform code files on the instance in /usr/local/etc/tf for the backend state, providers, regional providers, and so forth.</li>
+<li>Modifies /etc/bash.bashrc on the instance to notify a user upon login of the location of the Terraform files.</li>
+<li>Modifies /etc/bash.bashrc on the instance to set up .virmrc if it does not already exist.</li>
+</ol>
+
 
 <h2 id="OPTIONS">OPTIONS</h2>
 
