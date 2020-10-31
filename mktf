@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# mkgcptf - Create a GCP virtual instance and install Terraform
+# mktf - Create a GCP virtual instance and install Terraform
 
 # Copyright (c) 2020 Jeffrey S. Levine
 #
@@ -22,8 +22,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-#
-#  syntax: mkgcptf
+#  syntax: mktf
 #         -x, --prefix NEW_RESOURCE_PREFIX (required)
 #         -p, --project PROJECT_ID         (required)
 #         -z, --zone ZONE                  (reguired)
@@ -41,7 +40,7 @@
 
 usage()
 {
-  echo "usage: mkgcptf
+  echo "usage: mktf
           -x, --prefix NEW_RESOURCE_PREFIX (required)
           -p, --project PROJECT_ID         (required)
           -z, --zone ZONE                  (reguired)
