@@ -206,8 +206,11 @@ TF_SERVICE_ACCOUNT_EMAIL=$TF_SERVICE_ACCOUNT@$TF_PROJECT_ID.iam.gserviceaccount.
 TF_STATE_BUCKET=${TF_RESOURCE_PREFIX}${TF_RESOURCE_SUFFIX}
 TF_PROVIDER_VERSION="$(get_latest_gcp_tf_release_version)"
 
+RMTF_FILE_NAME=rmtf${TF_RESOURCE_SUFFIX}
+
 # create the Terraform service account
 
+echo Creating service account $TF_SERVICE_ACCOUNT...
 gcloud iam service-accounts create $TF_SERVICE_ACCOUNT \
   --description "Terraform service account" \
   --project $TF_PROJECT_ID
@@ -218,7 +221,7 @@ then
   exit 1
 fi
 
-echo adding roles to service account...
+echo Adding roles to service account...
 
 gcloud projects  \
   add-iam-policy-binding $TF_PROJECT_ID \
@@ -518,29 +521,37 @@ fi
 
 rm $TF_INSTANCE_USER_DATA
 
-cat <<EOF >rmtf$TF_RESOURCE_SUFFIX
+cat <<EOF >$RMTF_FILE_NAME
 #!/bin/sh
 
 echo Deleting Terraform state bucket gs://$TF_STATE_BUCKET...
-gsutil rb gs://$TF_STATE_BUCKET"
+gsutil rb gs://$TF_STATE_BUCKET
 
-echo Deleting instance $TF_INSTANCE_NAME...
-gcloud compute instances delete $TF_INSTANCE_NAME...
+echo Deleting instance $TF_INSTANCE_NAME in zone $TF_ZONE...
+gcloud compute instances delete $TF_INSTANCE_NAME --zone $TF_ZONE
 
 echo Deleting service account $TF_SERVICE_ACCOUNT_EMAIL...
 gcloud iam service-accounts delete $TF_SERVICE_ACCOUNT_EMAIL
 
-echo Cleanup complete.  Please delete the file $0 when you no longer need it.
+echo Cleanup complete.
+echo Please delete the file rmtf$TF_RESOURCE_SUFFIX when no longer needed.
 EOF
+chmod 755 $RMTF_FILE_NAME
 
-echo '+==================================================================+'
-echo ':                                                                  :'
-echo ': Notes:                                                           :'
-echo ':                                                                  :'
-echo ': (1) Allow the instance time to reboot after patch installations. :'
-echo ': (2) All Terraform code is in /usr/local/etc/tf on the instance.  :'
-echo ': (3) Copy the Terraform code to the desired directory.            :'
-echo ': (4) Make any changes needed (e.g. changing the backend prefix).  :'
-echo ': (5) Run "terraform init".                                        :'
-echo ':                                                                  :'
-echo '+==================================================================+'
+echo
+echo "Configuration information:"
+echo 
+echo "Service account name: $TF_SERVICE_ACCOUNT_EMAIL"
+echo "Terraform state bucket: $TF_STATE_BUCKET"
+echo "Instance name: $TF_INSTANCE_NAME"
+echo "Script for removing these components: $RMTF_FILE_NAME"
+echo
+echo "To start building your Terraform project:"
+echo
+echo "(1) Allow the instance time to reboot after patch installations."
+echo "(2) Ssh into the instance $TF_INSTANCE_NAME in zone $TF_ZONE."
+echo "(2) All Terraform code is in /usr/local/etc/tf on the instance."
+echo "(3) Copy the Terraform code to the desired directory."
+echo "(4) Make any changes needed (e.g. changing the backend prefix)."
+echo "(5) terraform init
+echo
